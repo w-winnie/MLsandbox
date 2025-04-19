@@ -1,0 +1,4 @@
+.env
+data/
+rough/
+__pycache__/
