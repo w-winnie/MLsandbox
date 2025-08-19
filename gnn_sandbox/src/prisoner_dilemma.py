@@ -1,21 +1,23 @@
 import networkx as nx
 import numpy as np
 import matplotlib.pyplot as plt
-from strategies import *
+import pandas as pd
+from src.strategies import *
 
-def generate_social_network(num_nodes=20, k=4, p=0.3):
+def generate_graph(num_nodes=20, k=4, p=0.3):
     G = nx.watts_strogatz_graph(n=num_nodes, k=k, p=p)
     return G
 
-def initialize_actions(G, random_init=True): #all nodes randomly initialized
+
+def initialize_actions(G, random_init=True): #all nodes randomly initialized if not all are coop
     for node in G.nodes:
         G.nodes[node]['current_action'] = np.random.choice([0, 1]) if random_init else 1
 
-def initialize_agent_actions(G, config=None, random_init=True):
+
+def agent_strategy(G, config=None):
     strategy_types = list(STRATEGY_FUNCTIONS.keys())
     nodes = list(G.nodes)
     total_nodes = len(nodes)
-
     if config:
         strategy_counts = []
         assigned_nodes = 0
@@ -38,7 +40,12 @@ def initialize_agent_actions(G, config=None, random_init=True):
     else:
         # Assign all nodes randomly
         strategy_assignment = np.random.choice(strategy_types, size=total_nodes)
+    return strategy_assignment
 
+
+def initialize_agent_actions(G, config=None, random_init=True):
+    strategy_assignment = agent_strategy(G, config)
+    nodes = list(G.nodes)
     # Assign strategies and initialize other attributes
     for node, strategy in zip(nodes, strategy_assignment):
         G.nodes[node]['strategy_type'] = strategy
@@ -48,12 +55,14 @@ def initialize_agent_actions(G, config=None, random_init=True):
         G.nodes[node]['payoff'] = 0
         G.nodes[node]['prev_payoff'] = 0
 
+
 payoff_matrix = {
     (1, 1): (3, 3),  # Both cooperate
     (1, 0): (0, 2),  # Cooperator gets 0, defector gets 2
     (0, 1): (2, 0),  # Defector gets 2, cooperator gets 0
     (0, 0): (0, 0)   # Both defect
 }
+
 
 def play_pd_round(G):
     payoffs = {node: 0 for node in G.nodes}
@@ -65,6 +74,7 @@ def play_pd_round(G):
             payoffs[node] += p1
         G.nodes[node]['payoff'] = payoffs[node]
 
+
 def update_actions(G):
     for node in G.nodes:
         payoffs = {n: G.nodes[n]['payoff'] for n in G.neighbors(node)}
@@ -73,27 +83,64 @@ def update_actions(G):
             best_neighbor = max(neighbor_payoffs, key=neighbor_payoffs.get)
             G.nodes[node]['current_action'] = G.nodes[best_neighbor]['current_action']
 
-def update_agent_actions(G):        
-    payoffs = {n: G.nodes[n]['payoff'] for n in G.neighbors(node)}     
+def update_agent_actions(G):             
     for node in G.nodes:
+        # payoffs = {n: G.nodes[n]['payoff'] for n in G.neighbors(node)}
         strategy_type = G.nodes[node]['strategy_type']
         strategy_func = STRATEGY_FUNCTIONS[strategy_type]
         neighbors = list(G.neighbors(node))
         next_action = strategy_func(node, G, neighbors)
         G.nodes[node]['current_action'] = next_action
-        G.nodes[node]['prev_payoff'] = payoffs[node]
+        G.nodes[node]['prev_payoff'] = G.nodes[node]['payoff']
         for neighbor in neighbors:
             G.nodes[node]['memory'][neighbor] = G.nodes[neighbor]['current_action']
 
+def get_node_features(G, node, round_num):
+    degree = G.degree[node]
+    current_action = G.nodes[node]['current_action']
+    strategy_type = G.nodes[node]['strategy_type']
+    payoffs = G.nodes[node]['payoff']
+    prev_payoff = G.nodes[node]['prev_payoff']
+    memory = G.nodes[node]['memory']
+    triggered = G.nodes[node]['triggered']
+    neighbors = list(G.neighbors(node))
+    neighbor_actions = [G.nodes[neighbor]['current_action'] for neighbor in neighbors]
+    defector_neighbors = neighbor_actions.count(0)
+    coop_neighbors = neighbor_actions.count(1)
+    return {
+        'node': node,
+        'round': round_num,
+        'degree': degree,
+        'current_action': current_action,
+        'strategy_type': strategy_type,
+        'payoff': payoffs,
+        'memory': memory,
+        'current_action': current_action,
+        'memory': memory,
+        'triggered': triggered,
+        'prev_payoff': prev_payoff,
+        'coop_neighbors': coop_neighbors,
+        'defector_neighbors': defector_neighbors
+    }
 
-if __name__ == "__main__":
-    G = generate_social_network()
-    strategies = initialize_actions(G)
-    
-    payoffs = play_pd_round(G, strategies)
-    print("Payoffs:", payoffs)
-    
-    strategies = update_actions(G, strategies, payoffs)
+
+def run_simulation(num_rounds=10, num_nodes=50, average_connection=6, rewiring=0.3):
+    G = generate_graph(num_nodes=num_nodes, k=average_connection, p=rewiring)
+    # initialize_actions(G, random=False)
+    initialize_agent_actions(G, random_init=True) #config=load_config(), 
+    all_data = []
+    for round_num in range(num_rounds): # In every round
+        # Calculate payoffs
+        play_pd_round(G)
+        # Collect node features and labels
+        for node in G.nodes:
+            node_features =  get_node_features(G, node, round_num)
+            all_data.append(node_features)
+        # Update actions based on payoffs
+        # update_actions(G)
+        update_agent_actions(G)
+    return pd.DataFrame(all_data)
+
 
 # def initialize_agent_actions(G, config=None, random_init=True):
 #     for node in G.nodes:
