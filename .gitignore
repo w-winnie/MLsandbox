@@ -1,6 +1,5 @@
+__pycache__/
 .env
 data/
+data_output/
 rough/
-__pycache__/
-todo/
-private/
