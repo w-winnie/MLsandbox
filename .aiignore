@@ -1,0 +1,4 @@
+# .aignore
+proprietary_algorithm.py
+personal_notes.md
+.env
